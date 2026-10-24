@@ -1,0 +1,5 @@
+# Runtime uses only the Python standard library (3.10+).
+# Optional: enables the run_ruff tool.
+ruff>=0.5
+# Development / tests
+pytest>=8.0

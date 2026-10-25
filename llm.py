@@ -76,7 +76,7 @@ class LLMClient:
                 return min(float(retry_after) + 1, 70)
         except ValueError:
             pass
-        m = re.search(r"try again in (?:(\d+)m)?(?:([\d.]+)s)?(?:([\d.]+)ms)?", detail)
+        m = re.search(r"try again in (?:(\d+)m(?!s))?(?:([\d.]+)s(?!\w))?(?:([\d.]+)ms)?", detail)
         if m and any(m.groups()):
             secs = int(m.group(1) or 0) * 60 + float(m.group(2) or 0) + float(m.group(3) or 0) / 1000
             return min(secs + 2, 70)

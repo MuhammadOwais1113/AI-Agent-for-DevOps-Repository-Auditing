@@ -1,0 +1,125 @@
+{
+  "repository": "https://github.com/MuhammadOwais1113/demo-shop-api",
+  "violations": [
+    {
+      "rule_id": "CI-001",
+      "category": "ci_cd",
+      "severity": "critical",
+      "file": ".github/workflows/ci.yml",
+      "line": 4,
+      "description": "Insecure pull_request_target trigger combined with PR head checkout",
+      "evidence": "The workflow triggers on pull_request_target and checks out the PR head commit, allowing untrusted PR code to run with repository permissions and secrets.",
+      "recommendation": "Use the pull_request trigger instead of pull_request_target when checking out pull request head code."
+    },
+    {
+      "rule_id": "SEC-001",
+      "category": "security",
+      "severity": "critical",
+      "file": "app/config.py",
+      "line": 3,
+      "description": "Hardcoded API key committed in configuration file",
+      "evidence": "Stripe API key is assigned directly in config.py.",
+      "recommendation": "Load API keys from environment variables rather than hardcoding in configuration files."
+    },
+    {
+      "rule_id": "CI-002",
+      "category": "ci_cd",
+      "severity": "high",
+      "file": ".github/workflows/ci.yml",
+      "line": 7,
+      "description": "Excessive write-all permissions in GitHub Actions workflow",
+      "evidence": "The CI workflow grants top-level write-all permissions.",
+      "recommendation": "Restrict workflow permissions to the minimum necessary scope (e.g., contents: read)."
+    },
+    {
+      "rule_id": "CI-003",
+      "category": "ci_cd",
+      "severity": "high",
+      "file": ".github/workflows/ci.yml",
+      "line": 23,
+      "description": "Script injection vulnerability via unescaped PR title interpolation",
+      "evidence": "PR title is directly interpolated into a inline bash script without sanitization.",
+      "recommendation": "Pass event values via environment variables instead of direct expression interpolation in run scripts."
+    },
+    {
+      "rule_id": "CI-004",
+      "category": "ci_cd",
+      "severity": "high",
+      "file": ".github/workflows/ci.yml",
+      "line": 25,
+      "description": "Test failures masked by appending '|| true' in CI pipeline",
+      "evidence": "pytest command appends '|| true', preventing test failures from breaking the CI build.",
+      "recommendation": "Remove '|| true' so test failures properly fail the CI workflow job."
+    },
+    {
+      "rule_id": "SEC-002",
+      "category": "security",
+      "severity": "high",
+      "file": "app/main.py",
+      "line": 39,
+      "description": "Flask application launched in debug mode on public host",
+      "evidence": "app.run is invoked with host='0.0.0.0' and debug=True.",
+      "recommendation": "Disable debug mode in production and bind host appropriately."
+    },
+    {
+      "rule_id": "REPO-001",
+      "category": "repository_hygiene",
+      "severity": "medium",
+      "file": ".env",
+      "line": 1,
+      "description": "Committed environment configuration and compiled Python cache files tracked in repository",
+      "evidence": ".env file containing database credentials and __pycache__ bytecode files are tracked in git.",
+      "recommendation": "Remove .env and __pycache__ files from git tracking and add them to .gitignore."
+    },
+    {
+      "rule_id": "CI-005",
+      "category": "ci_cd",
+      "severity": "medium",
+      "file": ".github/workflows/ci.yml",
+      "line": 13,
+      "description": "GitHub Action step pinned to mutable branch instead of commit SHA or release tag",
+      "evidence": "actions/checkout is pinned to @main branch ref.",
+      "recommendation": "Pin GitHub Actions to specific release version tags or full commit SHAs."
+    },
+    {
+      "rule_id": "BUILD-001",
+      "category": "build_release",
+      "severity": "medium",
+      "file": ".github/workflows/release.yml",
+      "line": 6,
+      "description": "Release workflow triggers build and deployment on every push to any branch",
+      "evidence": "The release workflow triggers on push to branch pattern '**' without gating or main branch restrictions.",
+      "recommendation": "Restrict release deployments to specific protected branches (e.g., main) or release tags."
+    },
+    {
+      "rule_id": "BUILD-002",
+      "category": "build_release",
+      "severity": "medium",
+      "file": "Dockerfile",
+      "line": 1,
+      "description": "Dockerfile uses unpinned latest base image",
+      "evidence": "Dockerfile uses python:latest as base image.",
+      "recommendation": "Pin the Docker base image to a specific version tag or digest (e.g., python:3.12-slim)."
+    },
+    {
+      "rule_id": "BUILD-003",
+      "category": "build_release",
+      "severity": "medium",
+      "file": "Dockerfile",
+      "line": 5,
+      "description": "Dockerfile executes remote install script piped directly into shell",
+      "evidence": "Dockerfile runs curl piped to sh.",
+      "recommendation": "Avoid piping remote scripts directly to shell; verify checksums or install verified packages directly."
+    },
+    {
+      "rule_id": "CFG-001",
+      "category": "configuration",
+      "severity": "medium",
+      "file": "app/config.py",
+      "line": 4,
+      "description": "Machine-specific absolute path configured in application settings",
+      "evidence": "DATA_DIR uses a local Windows user path.",
+      "recommendation": "Use relative paths or environment variables for directory configuration."
+    }
+  ]
+}

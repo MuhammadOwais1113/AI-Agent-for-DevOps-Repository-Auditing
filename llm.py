@@ -69,6 +69,8 @@ class LLMClient:
 
     def _post(self, url: str, headers: dict, body: dict) -> dict:
         payload = json.dumps(body).encode()
+        # Some providers' CDNs (e.g. Cloudflare in front of Groq) reject urllib's default User-Agent.
+        headers = {"user-agent": "devops-audit-agent/1.0", "accept": "application/json", **headers}
         last = ""
         for attempt in range(self.max_retries + 1):
             req = urllib.request.Request(url, data=payload, headers=headers, method="POST")

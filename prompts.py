@@ -21,6 +21,7 @@ To finish (only after investigating; you have at most {max_steps} tool calls):
 {{"thought": "<summary>", "action": "finish", "violations": [
   {{"category": "<one of {', '.join(CATEGORIES)}>", "severity": "critical|high|medium|low",
     "file": "<repo-relative path or null>", "line": <int or null>,
+    "quote": "<EXACT text copied from a tool result that shows the defect (one line, no secret values); required whenever file is not null; null for absence-type findings>",
     "description": "<short title of the defect>",
     "evidence": "<what you actually observed in tool output; quote short non-secret snippets>",
     "recommendation": "<specific, actionable fix>"}} ]}}
@@ -65,7 +66,15 @@ automation with no gates or triggered on every push).
 9. Severity: critical = live credentials / remote code execution paths in CI; high = tests or gates
    effectively disabled, dangerous workflow permissions/triggers, missing tests entirely; medium =
    missing lockfile/lint/.gitignore problems, machine-specific config; low = minor hygiene.
-10. If a tool returns an ERROR or is unavailable, do not invent its result; work around it.
+10. Open (read_file) every file you intend to cite BEFORE citing it. A file name seen only in list_files
+    is not evidence. Your `quote` must appear verbatim in a tool result, and it must actually demonstrate
+    the defect - if your own evidence contradicts your claim, do not report it.
+11. Pinning actions to a full 40-character commit SHA is the RECOMMENDED practice, never a defect. Pinning
+    to a version tag (@v4) is acceptable and at most a low-severity note. Flag only branch refs
+    (@main/@master) or no version at all.
+12. Do not report a dependency/lockfile problem without having read the manifest(s) and lockfile (or
+    searched for equivalents). `==`-pinned or lock-file-backed projects are fine.
+13. If a tool returns an ERROR or is unavailable, do not invent its result; work around it.
 
 Start by listing files. Be efficient: read the files that matter (CI workflows, dependency manifests,
 configs, Dockerfiles, entry points, a sample of source and tests) and follow up on anything suspicious

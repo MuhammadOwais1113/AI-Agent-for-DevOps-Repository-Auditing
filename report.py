@@ -51,12 +51,20 @@ def _count_lines(path: Path) -> int:
         return 0
 
 
-def finalize_violations(raw: list, ctx: RepoContext, seen_text: str = "") -> tuple[list[dict], list[str]]:
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def finalize_violations(raw: list, ctx: RepoContext, seen_text: str = "",
+                        inspected: set[str] | None = None) -> tuple[list[dict], list[str]]:
     """Return (clean violations, notes about dropped/adjusted items).
 
-    ``seen_text`` is everything the tools returned during the investigation; a cited
-    file that never appeared there is an unsupported claim and is dropped.
+    ``seen_text`` is everything the tools returned during the investigation and
+    ``inspected`` the files the agent actually opened or got search hits in. A finding
+    that cites a file must (a) be about an inspected file and (b) carry a ``quote`` that
+    appears verbatim in the tool output; otherwise it is an unsupported claim and dropped.
     """
+    haystack = _norm(seen_text)
     clean: list[dict] = []
     notes: list[str] = []
     files = set(ctx.all_files())
@@ -85,11 +93,17 @@ def finalize_violations(raw: list, ctx: RepoContext, seen_text: str = "") -> tup
                 # Likely an absence claim ("missing X"): the file legitimately does not exist.
                 notes.append(f"file '{file}' not in repository; set to null for: {desc[:50]}")
                 file, line = None, None
-            elif file not in seen_text:
-                notes.append(f"dropped (cited file never inspected): {file}: {desc[:50]}")
-                continue
-            elif line is not None and line > _count_lines(ctx.root / file):
-                line = None
+            else:
+                opened = file in inspected if inspected is not None else file in seen_text
+                if not opened:
+                    notes.append(f"dropped (cited file never opened): {file}: {desc[:50]}")
+                    continue
+                quote = _norm(redact(str(item.get("quote") or "")))
+                if quote.lower() in ("", "null", "none") or quote not in haystack:
+                    notes.append(f"dropped (quote not found in tool output): {file}: {desc[:50]}")
+                    continue
+                if line is not None and line > _count_lines(ctx.root / file):
+                    line = None
         else:
             line = None
 

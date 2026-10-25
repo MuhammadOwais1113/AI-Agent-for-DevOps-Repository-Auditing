@@ -25,6 +25,7 @@ def j(**kw):
 
 
 FINDING = {"category": "ci", "severity": "HIGH", "file": ".github/workflows/ci.yml", "line": 9,
+           "quote": "run: pytest || true",
            "description": "Test failures swallowed", "evidence": "pytest || true in workflow",
            "recommendation": "Remove the '|| true' so failures fail the job"}
 QUIET = lambda *_: None  # noqa: E731
@@ -41,7 +42,8 @@ def test_loop_follows_up_based_on_observation(repo):
         j(thought="CI file seen, inspect", action="inspect_workflow", args={"path": ".github/workflows/ci.yml"}),
         j(thought="confirm", action="read_file", args={"path": ".github/workflows/ci.yml"}),
         j(thought="look for secrets", action="search_code", args={"pattern": "API_KEY"}),
-        j(thought="done", action="finish", violations=[FINDING]),
+        j(thought="done", action="finish", violations=[FINDING]),  # nudged: not enough steps yet
+        j(thought="confirmed", action="finish", violations=[FINDING]),
     ])
     res = run_audit(llm, repo, max_steps=10, log=QUIET)
     assert [t["action"] for t in res.trace] == ["list_files", "inspect_workflow", "read_file", "search_code", "finish"]
@@ -74,7 +76,7 @@ def test_step_limit_forces_finish(repo):
 
 
 def test_finalize_drops_unsupported_and_dedups(repo):
-    seen = "workflow output .github/workflows/ci.yml"
+    seen = "workflow output .github/workflows/ci.yml 9: - run: pytest || true"
     raw = [
         FINDING,
         dict(FINDING, description="Test failures swallowed again", line=None),   # duplicate
@@ -95,14 +97,15 @@ def test_finalize_drops_unsupported_and_dedups(repo):
 
 def test_secrets_scrubbed_from_report(repo):
     f = dict(FINDING, evidence="key sk-abcdefghijklmnopqrstuvwxyz123456 in code")
-    out, _ = finalize_violations([f], repo, ".github/workflows/ci.yml")
+    out, _ = finalize_violations([f], repo, ".github/workflows/ci.yml 9: - run: pytest || true")
     assert "sk-abcdef" not in out[0]["evidence"]
 
 
 def test_cli_end_to_end_writes_valid_json(repo, tmp_path, monkeypatch):
     llm = ScriptedLLM([j(action="list_files", args={}), j(action="git_log", args={}),
                        j(action="read_file", args={"path": "README.md"}),
-                       j(action="git_status", args={}), j(action="finish", violations=[])])
+                       j(action="git_status", args={}), j(action="finish", violations=[]),
+                       j(action="finish", violations=[])])
     monkeypatch.setattr(agent, "clone_repo", lambda url, dest=None, depth=200: repo)
     out = tmp_path / "report.json"
     rc = agent.main(["--repo", "https://github.com/example/demo", "--output", str(out), "--quiet"], llm=llm)
@@ -118,3 +121,25 @@ def test_cli_rejects_bad_url_and_missing_key(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)  # no .env here
     assert agent.main(["--repo", "https://github.com/a/b", "--output", out]) == 2
     assert "error" in capsys.readouterr().err
+
+
+def test_finding_dropped_without_verbatim_quote_or_unopened_file(repo):
+    seen = "9: - run: pytest || true"
+    inspected = {".github/workflows/ci.yml"}
+    ok = FINDING
+    no_quote = dict(FINDING, description="Another", quote=None)
+    fake_quote = dict(FINDING, description="Third thing", quote="FROM python:latest")
+    unopened = dict(FINDING, file="src/app.py", description="Fourth", quote="API_KEY")
+    out, notes = finalize_violations([ok, no_quote, fake_quote, unopened], repo, seen, inspected)
+    assert len(out) == 1
+    assert sum("dropped" in n for n in notes) == 3
+
+
+def test_nudge_lists_unopened_key_files(repo):
+    llm = ScriptedLLM([j(action="list_files", args={}), j(action="git_log", args={}),
+                       j(action="git_status", args={}), j(action="search_code", args={"pattern": "x"}),
+                       j(action="git_log", args={"max_count": 5}), j(action="git_log", args={"max_count": 6}),
+                       j(action="finish", violations=[]), j(action="finish", violations=[])])
+    run_audit(llm, repo, max_steps=10, log=QUIET)
+    nudge = next(s for s in llm.seen if "have NOT been opened" in s)
+    assert ".github/workflows/ci.yml" in nudge and "README.md" in nudge

@@ -17,7 +17,12 @@ from tools import RepoContext, TOOLS, execute_tool, redact, truncate
 
 MAX_TOOL_CHARS = 7000
 CONTEXT_BUDGET_CHARS = 140_000
-MIN_STEPS_BEFORE_FINISH = 4
+MIN_STEPS_BEFORE_FINISH = 6
+KEY_FILE = re.compile(
+    r"(^|/)(\.github/workflows/[^/]+\.ya?ml|Dockerfile[^/]*|docker-compose[^/]*\.ya?ml|requirements[^/]*\.txt|"
+    r"pyproject\.toml|setup\.(py|cfg)|Pipfile(\.lock)?|poetry\.lock|uv\.lock|package(-lock)?\.json|Makefile|"
+    r"tox\.ini|\.pre-commit-config\.yaml|\.gitignore|README[^/]*|CODEOWNERS|\.env[^/]*)$", re.I)
+PATH_HIT = re.compile(r"^(\S+?):\d+:", re.M)
 MAX_BAD_REPLIES = 3
 
 
@@ -79,6 +84,7 @@ def run_audit(llm, ctx: RepoContext, max_steps: int = 30, log=print) -> AuditRes
         "Begin your investigation.")}]
     trace: list[dict] = []
     seen_text: list[str] = []
+    inspected: set[str] = set()
     seen_calls: set[str] = set()
     bad = 0
     tool_calls = 0
@@ -106,11 +112,17 @@ def run_audit(llm, ctx: RepoContext, max_steps: int = 30, log=print) -> AuditRes
 
         if action == "finish":
             listed = any(t["action"] == "list_files" for t in trace)
-            if not forced and (tool_calls < MIN_STEPS_BEFORE_FINISH or not listed) and not early_finish_warned:
+            unread = [f for f in ctx.all_files() if KEY_FILE.search(f) and f not in inspected]
+            if not forced and not early_finish_warned and (
+                    tool_calls < MIN_STEPS_BEFORE_FINISH or not listed or unread):
                 early_finish_warned = True
+                hint = ("; these key files have NOT been opened yet: " + ", ".join(unread[:15])
+                        if unread else "")
                 messages.append({"role": "user", "content":
-                                 "You have not investigated enough to finish. List files and read the key "
-                                 "CI, dependency, config and source files first."})
+                                 "Before finishing, make sure you have investigated enough" + hint +
+                                 ". Open any that could hold or rule out a defect (and files you plan to cite), "
+                                 "follow up on anything suspicious, then finish. Findings about files you never "
+                                 "opened will be discarded."})
                 continue
             final_raw = decision.get("violations", [])
             trace.append({"step": len(trace) + 1, "thought": thought, "action": "finish",
@@ -133,6 +145,10 @@ def run_audit(llm, ctx: RepoContext, max_steps: int = 30, log=print) -> AuditRes
             seen_calls.add(key)
             result = redact(execute_tool(ctx, action, args))
             seen_text.append(result)
+            if action in ("read_file", "inspect_workflow") and not result.startswith("ERROR"):
+                inspected.add(str(args.get("path", "")).replace("\\", "/").removeprefix("./"))
+            elif action in ("search_code", "scan_secrets"):
+                inspected.update(PATH_HIT.findall(result))
         result = truncate(result, MAX_TOOL_CHARS)
         tool_calls += 1
         trace.append({"step": len(trace) + 1, "thought": thought, "action": action, "args": args,

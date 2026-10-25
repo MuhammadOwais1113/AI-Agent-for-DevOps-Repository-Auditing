@@ -1,9 +1,15 @@
 __pycache__/
 *.pyc
 .env
+.env.*
+!.env.example
 .venv/
 venv/
 .pytest_cache/
 .ruff_cache/
 *.trace.json
 !sample_report.json.trace.json
+# local test runs (keep sample_report.json only)
+vuln_report.json
+clean_report.json
+test_report.json

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -24,7 +25,7 @@ class LLMError(RuntimeError):
 class LLMClient:
     def __init__(self, provider: str | None = None, model: str | None = None,
                  api_key: str | None = None, base_url: str | None = None,
-                 timeout: int = 120, max_retries: int = 4):
+                 timeout: int = 120, max_retries: int = 6):
         self.provider = (provider or os.getenv("LLM_PROVIDER") or self._guess_provider()).lower()
         if self.provider not in DEFAULT_MODELS:
             raise LLMError(f"unsupported LLM_PROVIDER '{self.provider}' (use anthropic or openai)")
@@ -67,6 +68,20 @@ class LLMClient:
         except (KeyError, IndexError, TypeError):
             raise LLMError(f"unexpected LLM response shape: {str(data)[:200]}")
 
+    @staticmethod
+    def _rate_limit_wait(retry_after: str | None, detail: str) -> float:
+        """Seconds to wait after a 429: honour Retry-After or 'try again in 1.5s / 75ms / 2m3s'."""
+        try:
+            if retry_after:
+                return min(float(retry_after) + 1, 70)
+        except ValueError:
+            pass
+        m = re.search(r"try again in (?:(\d+)m)?(?:([\d.]+)s)?(?:([\d.]+)ms)?", detail)
+        if m and any(m.groups()):
+            secs = int(m.group(1) or 0) * 60 + float(m.group(2) or 0) + float(m.group(3) or 0) / 1000
+            return min(secs + 2, 70)
+        return 20  # unknown 429: per-minute windows reset within ~a minute
+
     def _post(self, url: str, headers: dict, body: dict) -> dict:
         payload = json.dumps(body).encode()
         # Some providers' CDNs (e.g. Cloudflare in front of Groq) reject urllib's default User-Agent.
@@ -82,8 +97,10 @@ class LLMClient:
                 last = f"HTTP {e.code}: {detail}"
                 if e.code not in RETRYABLE:
                     raise LLMError(last)
+                wait = self._rate_limit_wait(e.headers.get("retry-after"), detail) if e.code == 429 else 0
             except (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError) as e:
                 last = f"{type(e).__name__}: {e}"
+                wait = 0
             if attempt < self.max_retries:
-                time.sleep(min(2 ** attempt * 2, 30))
+                time.sleep(max(wait, min(2 ** attempt * 2, 30)))
         raise LLMError(f"LLM request failed after retries: {last}")
